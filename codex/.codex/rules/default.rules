@@ -1,0 +1,236 @@
+# Dotfiles Codex exec policy.
+
+prefix_rule(
+    pattern = ["make"],
+    decision = "allow",
+    justification = "Allow documented dotfiles tasks.",
+    match = ["make verify"],
+    not_match = ["gmake verify"],
+)
+
+prefix_rule(
+    pattern = ["stow"],
+    decision = "allow",
+    justification = "Allow the repo's symlink workflow.",
+    match = ["stow codex"],
+    not_match = ["xstow codex"],
+)
+
+prefix_rule(
+    pattern = ["shellcheck"],
+    decision = "allow",
+    justification = "Allow shell linting.",
+    match = ["shellcheck scripts/changelog"],
+)
+
+prefix_rule(
+    pattern = ["shfmt"],
+    decision = "allow",
+    justification = "Allow shell formatting checks.",
+    match = ["shfmt -d scripts/changelog"],
+)
+
+prefix_rule(
+    pattern = ["zsh", "-n"],
+    decision = "allow",
+    justification = "Allow zsh syntax checks.",
+    match = ["zsh -n zsh/.zshrc"],
+    not_match = ["zsh -lc zsh/.zshrc"],
+)
+
+prefix_rule(
+    pattern = ["git", "status"],
+    decision = "allow",
+    justification = "Allow read-only git inspection.",
+    match = ["git status --short"],
+    not_match = ["git stash"],
+)
+
+prefix_rule(
+    pattern = ["git", "diff"],
+    decision = "allow",
+    justification = "Allow diff inspection.",
+    match = ["git diff --stat"],
+)
+
+prefix_rule(
+    pattern = ["git", "log"],
+    decision = "allow",
+    justification = "Allow history inspection.",
+    match = ["git log --oneline -5"],
+)
+
+prefix_rule(
+    pattern = ["git", "add"],
+    decision = "allow",
+    justification = "Allow staging when explicitly requested.",
+    match = ["git add codex/.codex/config.toml"],
+)
+
+prefix_rule(
+    pattern = ["git", "show"],
+    decision = "allow",
+    justification = "Allow commit inspection.",
+    match = ["git show HEAD~1"],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Commit locally only.",
+    match = ["git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "reset"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. All reset forms move HEAD and can orphan commits.",
+    match = ["git reset --hard HEAD~1", "git reset --soft HEAD~1", "git reset HEAD~1"],
+)
+
+prefix_rule(
+    pattern = ["git", "clean", "-f"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Do not delete untracked files.",
+    match = ["git clean -f"],
+    not_match = ["git clean -n", "git clean -fd"],
+)
+
+prefix_rule(
+    pattern = ["git", "clean", "-fd"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Do not delete untracked files or directories.",
+    match = ["git clean -fd"],
+)
+
+prefix_rule(
+    pattern = ["git", "branch", "-D"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Do not force-delete branches.",
+    match = ["git branch -D codex/tmp"],
+    not_match = ["git branch -d codex/tmp"],
+)
+
+prefix_rule(
+    pattern = ["git", "checkout", "--"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Do not rewrite tracked files with checkout.",
+    match = ["git checkout -- codex/.codex/config.toml"],
+    not_match = ["git checkout main"],
+)
+
+prefix_rule(
+    pattern = ["git", "restore"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Do not rewrite index or worktree with restore.",
+    match = ["git restore codex/.codex/config.toml"],
+)
+
+prefix_rule(
+    pattern = ["git", "switch"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Use gh workflows instead.",
+    match = ["git switch main"],
+)
+
+prefix_rule(
+    pattern = ["git", "stash", "drop"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Permanently destroys stashed work.",
+    match = ["git stash drop stash@{0}"],
+)
+
+prefix_rule(
+    pattern = ["git", "stash", "clear"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Permanently destroys all stashed work.",
+    match = ["git stash clear"],
+)
+
+prefix_rule(
+    pattern = ["git", "rebase"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Rewrites history, can drop commits.",
+    match = ["git rebase -i HEAD~3"],
+    not_match = ["git status"],
+)
+
+prefix_rule(
+    pattern = ["git", "commit", "--amend"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Replaces previous commit.",
+    match = ["git commit --amend -m 'fix'"],
+    not_match = ["git commit -m 'fix'"],
+)
+
+prefix_rule(
+    pattern = ["git", "rm"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Removes tracked files from worktree.",
+    match = ["git rm codex/.codex/config.toml"],
+)
+
+prefix_rule(
+    pattern = ["git", "gc"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Destroys recovery safety net.",
+    match = ["git gc --prune=now"],
+)
+
+prefix_rule(
+    pattern = ["git", "prune"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Destroys unreachable objects.",
+    match = ["git prune"],
+)
+
+prefix_rule(
+    pattern = ["git", "reflog", "expire"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Destroys reflog recovery data.",
+    match = ["git reflog expire --expire=now --all"],
+)
+
+prefix_rule(
+    pattern = ["git", "update-ref"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Low-level ref manipulation.",
+    match = ["git update-ref -d refs/heads/main"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-rf"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Use trash instead of recursive force-delete.",
+    match = ["rm -rf /tmp/build"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-fr"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Use trash instead of recursive force-delete.",
+    match = ["rm -fr /tmp/build"],
+)
+
+prefix_rule(
+    pattern = ["sudo"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Privilege escalation is forbidden.",
+    match = ["sudo rm -rf /"],
+)
+
+prefix_rule(
+    pattern = ["mkfs"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Filesystem format is forbidden.",
+    match = ["mkfs.ext4 /dev/sda1"],
+)
+
+prefix_rule(
+    pattern = ["dd"],
+    decision = "forbidden",
+    justification = "Blocked by repo policy. Raw disk write is forbidden.",
+    match = ["dd if=/dev/zero of=/dev/sda"],
+)
+
+prefix_rule(pattern=["npm", "run", "build"], decision="allow")

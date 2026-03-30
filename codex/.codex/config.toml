@@ -1,0 +1,67 @@
+# Codex CLI defaults, pinned explicitly where the docs state a default.
+# Leave example-only or model-dependent settings unset so Codex keeps its
+# built-in behavior.
+
+# Recommended primary model in the current Codex sample config.
+model = "gpt-5.4"
+
+# Documented default provider.
+model_provider = "openai"
+
+# Interactive approval default from the Codex config docs.
+approval_policy = "on-request"
+
+# Shell tools use login-shell semantics by default.
+allow_login_shell = true
+
+# Allow file writes within workspace — analog: Claude skipDangerousModePermissionPrompt.
+sandbox_mode = "workspace-write"
+
+# Default local auth persistence.
+cli_auth_credentials_store = "file"
+
+# Default ChatGPT auth base URL from the sample config.
+chatgpt_base_url = "https://chatgpt.com/backend-api/"
+
+# Default web search mode.
+web_search = "cached"
+model_reasoning_effort = "high"
+service_tier = "fast"
+
+# Disable co-author trailers — analog: Claude attribution.commit = "", attribution.pr = ""
+commit_attribution = ""
+personality = "pragmatic"
+
+[features]
+# Enable the documented experimental hook system for repo-local safety checks.
+codex_hooks = true
+
+[history]
+# Default history persistence mode.
+persistence = "save-all"
+
+[analytics]
+# Disable Codex analytics for this machine/profile.
+enabled = false
+
+[feedback]
+# Disable sending feedback from the client.
+enabled = false
+
+[otel]
+# Do not export OTEL logs anywhere.
+exporter = "none"
+
+# Do not export OTEL metrics anywhere. Docs say this otherwise defaults to
+# `statsig`, so pinning `none` matters for privacy.
+metrics_exporter = "none"
+
+# Do not export OTEL traces anywhere.
+trace_exporter = "none"
+
+# Raw user prompts are only exported when this is opted in, but pin `false`
+# explicitly to avoid any ambiguity.
+log_user_prompt = false
+
+[tui]
+status_line = ["model-with-reasoning", "context-remaining", "current-dir", "git-branch", "context-used"]
