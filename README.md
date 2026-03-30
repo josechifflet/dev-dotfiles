@@ -112,3 +112,8 @@ stow codex    # symlinks codex/.codex  → ~/.codex
 - Unblock a git command — remove it from all three layers (rules, deny-list, hook script) to maintain consistency
 - Add rules — drop a `.md` file in `claude/.claude/rules/` or append to `codex/.codex/AGENTS.md`
 - Plugins — edit `enabledPlugins` in `settings.json` (Claude) or configure in `config.toml` (Codex)
+
+## Credits
+
+- [This hook stops Claude Code running dangerous git commands](https://www.aihero.dev/this-hook-stops-claude-code-running-dangerous-git-commands) — original hook approach and git safety patterns
+- [Trail of Bits claude-code-config](https://github.com/trailofbits/claude-code-config/blob/main/settings.json) — credential read deny-lists, shell config protections, and destructive command patterns
