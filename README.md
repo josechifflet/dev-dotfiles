@@ -1,14 +1,8 @@
-<div align="center">
-
 # Secure Agentic Dev
 
-Hardened configurations for AI coding agents
+Hardened configurations for AI coding agents. Drop-in configs that let Claude Code and Codex CLI read, stage, and commit — but never push, rewrite history, or destroy data.
 
-Drop-in configs that let Claude Code and Codex CLI read, stage, and commit — but never push, rewrite history, or destroy data.
-
-[Claude Code](#claude-code) • [Codex CLI](#codex-cli) • [How it works](#how-it-works) • [Getting started](#getting-started)
-
-</div>
+[Claude Code](#claude-code) · [Codex CLI](#codex-cli) · [How it works](#how-it-works) · [Getting started](#getting-started)
 
 ## Overview
 
