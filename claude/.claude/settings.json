@@ -3,7 +3,6 @@
   "respectGitignore": false,
   "cleanupPeriodDays": 365,
   "env": {
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
     "DISABLE_TELEMETRY": "1",
     "DISABLE_ERROR_REPORTING": "1",
     "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
