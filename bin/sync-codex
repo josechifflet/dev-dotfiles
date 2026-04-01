@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# Sync codex config to ~/.codex/
+# ==============================================================================
+#
+# Analogous to bin/sync-claude for the codex package. Codex CLI resolves
+# symlinks the same way Claude Code does, so context files that symlink back
+# into the repo cause duplicate loading when editing inside this repo.
+#
+# Split strategy:
+#   SYMLINKS — config.toml, hooks.json, hooks/* (live editing back to repo)
+#   COPIES   — AGENTS.md, rules/* (break resolution chain)
+#
+# Flags:
+#   --dry-run   print what would happen without writing
+#   --unlink    remove managed entries from target
+# ==============================================================================
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source_dir="$repo_root/codex/.codex"
+
+# --- File classification ---
+# Top-level files that should be symlinks in ~/.codex/ (edits flow back to repo).
+SYMLINK_FILES=(config.toml hooks.json)
+# Directories whose children should each get an individual symlink (no-folding).
+SYMLINK_DIRS=(hooks)
+# Top-level files that must be copies in ~/.codex/ (break resolution chain).
+COPY_FILES=(AGENTS.md)
+# Directories whose children must be copies in ~/.codex/.
+COPY_DIRS=(rules)
+
+target="$HOME/.codex"
+
+# --- Flags ---
+is_dry_run=0
+is_unlink=0
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      is_dry_run=1
+      shift
+      ;;
+    --unlink)
+      is_unlink=1
+      shift
+      ;;
+    *)
+      echo "Usage: bin/sync-codex [--dry-run] [--unlink]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+
+# Collect all managed paths relative to the target root, one per line.
+collect_managed_paths() {
+  for f in "${SYMLINK_FILES[@]}"; do
+    [[ -e "$source_dir/$f" || -L "$source_dir/$f" ]] && echo "$f"
+  done
+  for d in "${SYMLINK_DIRS[@]}"; do
+    [[ -d "$source_dir/$d" ]] || continue
+    for child in "$source_dir/$d"/*; do
+      [[ -e "$child" || -L "$child" ]] || continue
+      echo "$d/$(basename "$child")"
+    done
+  done
+  for f in "${COPY_FILES[@]}"; do
+    [[ -e "$source_dir/$f" ]] && echo "$f"
+  done
+  for d in "${COPY_DIRS[@]}"; do
+    [[ -d "$source_dir/$d" ]] || continue
+    for child in "$source_dir/$d"/*; do
+      [[ -e "$child" || -L "$child" ]] || continue
+      echo "$d/$(basename "$child")"
+    done
+  done
+}
+
+# ==============================================================================
+# Unlink mode — remove managed entries from target
+# ==============================================================================
+
+if [[ "$is_unlink" -eq 1 ]]; then
+  count=0
+  [[ -d "$target" ]] || exit 0
+  while IFS= read -r rel; do
+    dst="$target/$rel"
+    if [[ -e "$dst" || -L "$dst" ]]; then
+      if [[ "$is_dry_run" -eq 1 ]]; then
+        echo "would remove: $dst"
+      else
+        rm -rf "$dst"
+        echo "removed: $dst"
+      fi
+      count=$((count + 1))
+    fi
+  done < <(collect_managed_paths)
+  [[ "$is_dry_run" -eq 0 ]] && echo "sync-codex --unlink: removed $count entries"
+  exit 0
+fi
+
+# ==============================================================================
+# Link mode — sync target (symlinks + copies)
+# ==============================================================================
+
+count=0
+
+# Ensure parent dirs exist.
+for d in "${SYMLINK_DIRS[@]}" "${COPY_DIRS[@]}"; do
+  [[ "$is_dry_run" -eq 0 ]] && mkdir -p "$target/$d"
+done
+
+# --- Symlink: top-level files ---
+for f in "${SYMLINK_FILES[@]}"; do
+  src="$source_dir/$f"
+  dst="$target/$f"
+  [[ -e "$src" || -L "$src" ]] || continue
+
+  if [[ "$is_dry_run" -eq 1 ]]; then
+    echo "symlink: $dst -> $src"
+    count=$((count + 1))
+    continue
+  fi
+
+  if [[ -L "$dst" ]]; then
+    existing="$(readlink "$dst")"
+    [[ "$existing" == "$src" ]] && continue
+  fi
+
+  rm -rf "$dst"
+  ln -s "$src" "$dst"
+  count=$((count + 1))
+done
+
+# --- Symlink: directory children (no-folding) ---
+for d in "${SYMLINK_DIRS[@]}"; do
+  [[ -d "$source_dir/$d" ]] || continue
+  for child in "$source_dir/$d"/*; do
+    [[ -e "$child" || -L "$child" ]] || continue
+    name="$(basename "$child")"
+    dst="$target/$d/$name"
+
+    if [[ "$is_dry_run" -eq 1 ]]; then
+      echo "symlink: $dst -> $child"
+      count=$((count + 1))
+      continue
+    fi
+
+    if [[ -L "$dst" ]]; then
+      existing="$(readlink "$dst")"
+      [[ "$existing" == "$child" ]] && continue
+    fi
+
+    rm -rf "$dst"
+    ln -s "$child" "$dst"
+    count=$((count + 1))
+  done
+done
+
+# --- Copy: top-level files ---
+for f in "${COPY_FILES[@]}"; do
+  src="$source_dir/$f"
+  dst="$target/$f"
+  [[ -e "$src" ]] || continue
+
+  if [[ "$is_dry_run" -eq 1 ]]; then
+    echo "copy: $dst"
+    count=$((count + 1))
+    continue
+  fi
+
+  rm -f "$dst"
+  cp -L "$src" "$dst"
+  count=$((count + 1))
+done
+
+# --- Copy: directory children ---
+for d in "${COPY_DIRS[@]}"; do
+  [[ -d "$source_dir/$d" ]] || continue
+  for child in "$source_dir/$d"/*; do
+    [[ -e "$child" || -L "$child" ]] || continue
+    name="$(basename "$child")"
+    dst="$target/$d/$name"
+
+    if [[ "$is_dry_run" -eq 1 ]]; then
+      echo "copy: $dst"
+      count=$((count + 1))
+      continue
+    fi
+
+    rm -f "$dst"
+    cp -L "$child" "$dst"
+    count=$((count + 1))
+  done
+done
+
+echo "sync-codex: synced $count entries to $target/"

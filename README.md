@@ -2,13 +2,13 @@
 
 Hardened configurations for AI coding agents. Drop-in configs that let Claude Code and Codex CLI read, stage, and commit — but never push, rewrite history, or destroy data.
 
-[Claude Code](#claude-code) · [Codex CLI](#codex-cli) · [How it works](#how-it-works) · [Getting started](#getting-started)
+[Claude Code](#claude-code) · [Cursor](#cursor) · [Codex CLI](#codex-cli) · [How it works](#how-it-works) · [Getting started](#getting-started)
 
 ## Overview
 
 AI coding agents are powerful but dangerous when given unrestricted shell access. A single hallucinated `git push --force` or `git reset --hard` can cause irreversible damage.
 
-This repo provides production-ready dotfile configurations for two major AI coding agents, enforcing a strict commit-only workflow through three independent safety layers.
+This repo provides production-ready dotfile configurations for three major AI coding agents, enforcing a strict commit-only workflow through three independent safety layers.
 
 ## How it works
 
@@ -58,6 +58,22 @@ Key settings in `settings.json`:
 - Hook — `block-dangerous-git.sh` fires on every Bash tool call
 - Attribution blanked — no "Generated with" or "Co-Authored-By" trailers
 
+## Cursor
+
+```
+cursor/.cursor/
+├── hooks.json                 # hook registration (beforeShellExecution)
+└── hooks/
+    └── block-dangerous-git.sh # shell hook (JSON stdin/stdout protocol)
+```
+
+Rules are generated at sync time from `claude/.claude/rules/*.md` — each `.md` is converted to a `.mdc` file with YAML frontmatter injected. This keeps claude as the single source of truth for rules.
+
+Key differences from Claude Code hook:
+- Cursor uses a JSON stdin/stdout protocol (`{"permission":"allow"}` or `{"permission":"deny","agent_message":"..."}`)
+- Hook is registered as `beforeShellExecution` in `hooks.json`
+- Rules use `.mdc` format with `alwaysApply: true` frontmatter
+
 ## Codex CLI
 
 ```
@@ -79,22 +95,52 @@ Key settings in `config.toml`:
 
 ## Getting started
 
-Copy the relevant folder to your home directory:
+### Option A: sync scripts (recommended)
+
+The sync scripts use a split strategy — symlinks for files that benefit from live editing (settings, hooks), copies for files that would cause duplicate context loading if symlinked (CLAUDE.md, rules). This prevents AI agents from loading config twice when working inside this repo.
 
 ```sh
-# Claude Code
-cp -r claude/.claude ~/
+# Claude Code — selective symlinks + copies to ~/.claude/
+bin/sync-claude
 
-# Codex CLI
-cp -r codex/.codex ~/
+# Cursor — symlinks for hooks, generated .mdc rules from claude sources to ~/.cursor/
+bin/sync-cursor
+
+# Codex CLI — selective symlinks + copies to ~/.codex/
+bin/sync-codex
 ```
 
-Or symlink via [GNU Stow](https://www.gnu.org/software/stow/):
+To remove managed entries:
 
 ```sh
-# From the repo root
-stow claude   # symlinks claude/.claude → ~/.claude
-stow codex    # symlinks codex/.codex  → ~/.codex
+bin/sync-claude --unlink
+bin/sync-cursor --unlink
+bin/sync-codex --unlink
+```
+
+Preview without writing:
+
+```sh
+bin/sync-claude --dry-run
+bin/sync-cursor --dry-run
+bin/sync-codex --dry-run
+```
+
+### Option B: plain copy
+
+```sh
+cp -r claude/.claude ~/   # Claude Code
+cp -r cursor/.cursor ~/   # Cursor
+cp -r codex/.codex ~/     # Codex CLI
+```
+
+### Option C: GNU Stow
+
+```sh
+# From the repo root — works but causes duplicate context loading when
+# editing inside this repo (AI agents resolve symlinks)
+stow claude
+stow codex
 ```
 
 > [!NOTE]
@@ -104,7 +150,7 @@ stow codex    # symlinks codex/.codex  → ~/.codex
 
 - Add allowed commands — edit `permissions.allow` in `settings.json` (Claude) or add `prefix_rule(..., decision="allow")` in `default.rules` (Codex)
 - Unblock a git command — remove it from all three layers (rules, deny-list, hook script) to maintain consistency
-- Add rules — drop a `.md` file in `claude/.claude/rules/` or append to `codex/.codex/AGENTS.md`
+- Add rules — drop a `.md` file in `claude/.claude/rules/` (cursor `.mdc` rules are auto-generated on next `bin/sync-cursor`) or append to `codex/.codex/AGENTS.md`
 - Plugins — edit `enabledPlugins` in `settings.json` (Claude) or configure in `config.toml` (Codex)
 
 ## Credits

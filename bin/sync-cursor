@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# Sync cursor config to ~/.cursor/
+# ==============================================================================
+#
+# Analogous to bin/sync-claude for the cursor package. Cursor (like Claude Code)
+# resolves symlinks, so rules must be copies to avoid duplicate context loading
+# when editing inside this repo.
+#
+# Strategy:
+#   SYMLINKS — hooks/*, skills/* (live editing back to repo)
+#   GENERATED COPIES — rules/*.mdc (built from claude/.claude/rules/*.md with
+#                      YAML frontmatter injected, so one source of truth for
+#                      both tools)
+#
+# The existing ~/.cursor/hooks.json may contain entries from other tools.
+# This script merges our hooks into the existing file using jq, preserving
+# external entries.
+#
+# Flags:
+#   --dry-run   print what would happen without writing
+#   --unlink    remove managed entries from target
+# ==============================================================================
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source_dir="$repo_root/cursor/.cursor"
+
+# Claude rules are the single source of truth — we convert them to .mdc format.
+claude_rules_dir="$repo_root/claude/.claude/rules"
+
+target="$HOME/.cursor"
+
+# --- File classification ---
+# Directories whose children each get an individual symlink (no-folding).
+# Target dirs may contain unmanaged runtime data.
+SYMLINK_DIRS=(hooks)
+
+# --- Flags ---
+is_dry_run=0
+is_unlink=0
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      is_dry_run=1
+      shift
+      ;;
+    --unlink)
+      is_unlink=1
+      shift
+      ;;
+    *)
+      echo "Usage: bin/sync-cursor [--dry-run] [--unlink]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+
+# Map a claude rule filename to a human-readable description for the .mdc
+# frontmatter. The description tells Cursor's Agent when to apply the rule
+# (in "Agent Decides" mode) and shows in the rules UI.
+rule_description() {
+  case "$1" in
+    communication) echo "Communication style — extreme concision, direct answers" ;;
+    markdown) echo "Markdown report constraints — never create unless explicitly requested" ;;
+    comments) echo "Comment strategy — over-comment the why, skip the obvious" ;;
+    git) echo "Git safety policy — read-only default, forbidden destructive commands" ;;
+    development) echo "Development philosophy — simplest viable solution, no speculation" ;;
+    # Fallback for any new rules added later.
+    *) echo "Rule: $1" ;;
+  esac
+}
+
+# Collect all managed paths relative to the target root.
+collect_managed_paths() {
+  # hooks.json (top-level file we manage).
+  echo "hooks.json"
+  # Children of symlink dirs.
+  for d in "${SYMLINK_DIRS[@]}"; do
+    [[ -d "$source_dir/$d" ]] || continue
+    for child in "$source_dir/$d"/*; do
+      [[ -e "$child" || -L "$child" ]] || continue
+      echo "$d/$(basename "$child")"
+    done
+  done
+  # Generated rules (derived from claude sources, not stored in cursor/).
+  if [[ -d "$claude_rules_dir" ]]; then
+    for child in "$claude_rules_dir"/*.md; do
+      [[ -e "$child" ]] || continue
+      local name
+      name="$(basename "$child" .md)"
+      echo "rules/${name}.mdc"
+    done
+  fi
+}
+
+# ==============================================================================
+# Unlink mode — remove managed entries from target
+# ==============================================================================
+
+if [[ "$is_unlink" -eq 1 ]]; then
+  count=0
+  [[ -d "$target" ]] || exit 0
+  while IFS= read -r rel; do
+    dst="$target/$rel"
+    if [[ -e "$dst" || -L "$dst" ]]; then
+      if [[ "$is_dry_run" -eq 1 ]]; then
+        echo "would remove: $dst"
+      else
+        rm -rf "$dst"
+        echo "removed: $dst"
+      fi
+      count=$((count + 1))
+    fi
+  done < <(collect_managed_paths)
+  [[ "$is_dry_run" -eq 0 ]] && echo "sync-cursor --unlink: removed $count entries"
+  exit 0
+fi
+
+# ==============================================================================
+# Link mode
+# ==============================================================================
+
+count=0
+
+# Ensure parent dirs exist.
+for d in "${SYMLINK_DIRS[@]}"; do
+  [[ "$is_dry_run" -eq 0 ]] && mkdir -p "$target/$d"
+done
+[[ "$is_dry_run" -eq 0 ]] && mkdir -p "$target/rules"
+
+# --- hooks.json: merge our hooks into existing file ---
+# The target may already have hooks from other tools. We merge our hook entries
+# using jq, preserving external entries.
+src_hooks="$source_dir/hooks.json"
+dst_hooks="$target/hooks.json"
+if [[ -e "$src_hooks" ]]; then
+  if [[ "$is_dry_run" -eq 1 ]]; then
+    echo "merge-hooks: $dst_hooks (from $src_hooks)"
+    count=$((count + 1))
+  else
+    if command -v jq > /dev/null 2>&1; then
+      if [[ -e "$dst_hooks" ]] && [[ ! -L "$dst_hooks" ]]; then
+        # Deep merge: our hooks entries are added/updated into the existing
+        # file. For arrays under each hook event, we concatenate and deduplicate
+        # by command path.
+        jq -s '
+          .[0] as $existing | .[1] as $ours |
+          $existing * {
+            version: ($ours.version // $existing.version),
+            hooks: (
+              ($existing.hooks // {}) as $eh |
+              ($ours.hooks // {}) as $oh |
+              reduce ($oh | keys[]) as $event (
+                $eh;
+                . + {
+                  ($event): (
+                    (($eh[$event] // []) + ($oh[$event] // []))
+                    | unique_by(.command)
+                  )
+                }
+              )
+            )
+          }
+        ' "$dst_hooks" "$src_hooks" > "$dst_hooks.tmp"
+        mv "$dst_hooks.tmp" "$dst_hooks"
+      else
+        # No existing file or it's a stale symlink — just copy ours.
+        rm -f "$dst_hooks"
+        cp "$src_hooks" "$dst_hooks"
+      fi
+      count=$((count + 1))
+    else
+      echo "warning: jq not found, skipping hooks.json merge" >&2
+    fi
+  fi
+fi
+
+# --- Symlink: directory children (no-folding) ---
+for d in "${SYMLINK_DIRS[@]}"; do
+  [[ -d "$source_dir/$d" ]] || continue
+  for child in "$source_dir/$d"/*; do
+    [[ -e "$child" || -L "$child" ]] || continue
+    name="$(basename "$child")"
+    dst="$target/$d/$name"
+
+    if [[ "$is_dry_run" -eq 1 ]]; then
+      echo "symlink: $dst -> $child"
+      count=$((count + 1))
+      continue
+    fi
+
+    # Skip if already a correct symlink.
+    if [[ -L "$dst" ]]; then
+      existing="$(readlink "$dst")"
+      [[ "$existing" == "$child" ]] && continue
+    fi
+
+    rm -rf "$dst"
+    ln -s "$child" "$dst"
+    count=$((count + 1))
+  done
+done
+
+# --- Generated rules: convert claude .md → cursor .mdc ---
+# Single source of truth: claude/.claude/rules/*.md
+# Each .md file gets YAML frontmatter prepended and written as .mdc.
+if [[ -d "$claude_rules_dir" ]]; then
+  for src in "$claude_rules_dir"/*.md; do
+    [[ -e "$src" ]] || continue
+    name="$(basename "$src" .md)"
+    dst="$target/rules/${name}.mdc"
+
+    if [[ "$is_dry_run" -eq 1 ]]; then
+      echo "generate-rule: $dst (from $src)"
+      count=$((count + 1))
+      continue
+    fi
+
+    # Build the .mdc file: YAML frontmatter + original content.
+    desc="$(rule_description "$name")"
+    {
+      echo "---"
+      echo "description: \"${desc}\""
+      echo "alwaysApply: true"
+      echo "---"
+      echo ""
+      cat "$src"
+    } > "$dst"
+    count=$((count + 1))
+  done
+fi
+
+echo "sync-cursor: synced $count entries to $target/"
